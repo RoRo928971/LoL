@@ -165,6 +165,7 @@
           </div>
         </section>
 
+        ${combosHtml(championId, detail, archetypeKey)}
         ${skillOrderHtml(championId, detail)}
         ${detail ? spellsHtml(detail) : ''}`;
 
@@ -254,6 +255,68 @@
         </div>
         <p class="build-total">コアビルド合計: <strong>${gold(Recommend.totalGold(set))}</strong></p>
       </div>`;
+  }
+
+  // コンボトークン (Q/W/E/R/AA/FL) を表示チップに変換する
+  function comboTokenHtml(token, detail) {
+    const info = Combos.tokenInfo(token);
+    if (info.type === 'spell') {
+      const idx = { Q: 0, W: 1, E: 2, R: 3 }[info.slot];
+      const spell = detail && detail.spells && detail.spells[idx];
+      return `
+        <span class="combo-token" title="${esc(spell ? spell.name : info.slot)}">
+          ${spell ? `<img src="${DDragon.spellIcon(spell)}" alt="">` : ''}
+          <span class="combo-key">${esc(info.label)}</span>
+        </span>`;
+    }
+    return `<span class="combo-token combo-token-text" title="${esc(info.title)}">
+      <span class="combo-key combo-key-alt">${esc(info.label)}</span></span>`;
+  }
+
+  function combosHtml(championId, detail, archetypeKey) {
+    const combos = Combos.get(championId);
+    const playstyle = Combos.PLAYSTYLE[archetypeKey] || [];
+    const allytips = (detail && detail.allytips) || [];
+    const enemytips = (detail && detail.enemytips) || [];
+
+    const comboSection = combos
+      ? combos.map((c) => `
+          <div class="combo">
+            <div class="combo-head">
+              <span class="combo-name">${esc(c.name)}</span>
+            </div>
+            <div class="combo-seq">
+              ${c.keys.map((k) => comboTokenHtml(k, detail)).join('<span class="skill-arrow">›</span>')}
+            </div>
+            <p class="combo-desc">${esc(c.desc)}</p>
+          </div>`).join('')
+      : `<p class="skill-note">このチャンピオンのコンボは未収録です。
+         下の「立ち回りの基本」とスキル説明を参考にしてください。
+         (AA = 通常攻撃, FL = フラッシュ)</p>`;
+
+    return `
+      <section class="panel">
+        <h3>コンボと使い方</h3>
+        <div class="build-grid">
+          <div class="build-col">
+            <h4>コンボ ${combos ? '' : '<span class="badge badge-auto">未収録</span>'}</h4>
+            ${comboSection}
+            <h4 class="counter-head">立ち回りの基本 <small>(${esc(Archetypes.DEFS[archetypeKey].label)})</small></h4>
+            <ul class="tips-list">
+              ${playstyle.map((p) => `<li>${esc(p)}</li>`).join('')}
+            </ul>
+          </div>
+          <div class="build-col">
+            ${allytips.length ? `
+              <h4>使い方のヒント <small class="tip-source">(公式データ)</small></h4>
+              <ul class="tips-list">${allytips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+            ${enemytips.length ? `
+              <h4 class="counter-head">このチャンピオンと対面するとき</h4>
+              <ul class="tips-list tips-enemy">${enemytips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+            ${!allytips.length && !enemytips.length ? '<p class="empty">公式ヒントはありません。</p>' : ''}
+          </div>
+        </div>
+      </section>`;
   }
 
   function skillOrderHtml(championId, detail) {
