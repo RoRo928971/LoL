@@ -28,6 +28,7 @@
     if (view === 'champion' && param) renderChampionDetail(decodeURIComponent(param));
     else if (view === 'items') renderItems();
     else if (view === 'runes') renderRunes();
+    else if (view === 'mydata') renderMyData();
     else renderChampions();
   }
 
@@ -376,6 +377,262 @@
                 ${slot.runes.map((r) => runeHtml(r, i === 0)).join('')}
               </div>`).join('')}
           </div>`).join('')}
+      </section>`;
+  }
+
+  // ---------------- マイデータ (戦績分析) ----------------
+
+  // match-v5 の championName から Data Dragon のチャンピオンを引く
+  // (大文字小文字の揺れ: FiddleSticks 等に対応)
+  let champByLower = null;
+  function findChampion(name) {
+    if (!champByLower) {
+      champByLower = {};
+      for (const c of Object.values(DDragon.state.champions)) champByLower[c.id.toLowerCase()] = c;
+    }
+    return champByLower[String(name || '').toLowerCase()] || null;
+  }
+
+  // ルーンID → ルーン情報 (キーストーンアイコン表示用)
+  let runeById = null;
+  function findRune(id) {
+    if (!runeById) {
+      runeById = {};
+      for (const tree of DDragon.state.runeTrees) {
+        for (const slot of tree.slots) for (const r of slot.runes) runeById[r.id] = r;
+      }
+    }
+    return runeById[id] || null;
+  }
+
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const num = (v, digits = 1) => v.toFixed(digits);
+  const timeAgo = (ts) => {
+    if (!ts) return '';
+    const d = Date.now() - ts;
+    const h = Math.floor(d / 3600000);
+    if (h < 1) return `${Math.max(1, Math.floor(d / 60000))}分前`;
+    if (h < 24) return `${h}時間前`;
+    return `${Math.floor(h / 24)}日前`;
+  };
+
+  async function renderMyData() {
+    main.innerHTML = '<div class="loading"><div class="spinner"></div><p>確認中…</p></div>';
+
+    const server = await MyData.ping();
+    if (!server) {
+      main.innerHTML = `
+        <div class="error-box">
+          <h3>中継サーバーが起動していません</h3>
+          <p>マイデータ機能は Riot API を利用するため、付属の中継サーバーからの起動が必要です。
+          静的サーバー (python3 -m http.server 等) では利用できません。</p>
+          <pre>node server.js</pre>
+          <p>で起動し、<strong>http://localhost:8000</strong> を開き直してください。
+          他のタブ(ビルド提案・図鑑)はこのままでも利用できます。</p>
+        </div>`;
+      return;
+    }
+
+    const saved = (k, d = '') => localStorage.getItem(k) || d;
+    main.innerHTML = `
+      <section class="panel">
+        <h3>マイデータ分析</h3>
+        <p class="skill-note">Riot ID を入力すると、最近のマッチ履歴から勝率・KDA・チャンピオン別成績などを分析します。</p>
+        <form id="mydata-form" class="mydata-form">
+          <label>Riot ID
+            <input type="text" id="md-riotid" placeholder="プレイヤー名#JP1" required
+              value="${esc(saved(MyData.LS.riotId))}">
+          </label>
+          <label>リージョン
+            <select id="md-region">
+              ${MyData.PLATFORMS.map(([v, l]) =>
+                `<option value="${v}" ${saved(MyData.LS.region, 'jp1') === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </label>
+          <label>取得試合数
+            <select id="md-count">
+              ${[10, 20, 30, 50].map((n) =>
+                `<option value="${n}" ${saved(MyData.LS.count, '20') === String(n) ? 'selected' : ''}>${n}試合</option>`).join('')}
+            </select>
+          </label>
+          ${server.hasEnvKey ? '' : `
+          <label>Riot APIキー
+            <input type="password" id="md-apikey" placeholder="RGAPI-..." required
+              value="${esc(saved(MyData.LS.apiKey))}">
+          </label>`}
+          <button type="submit" class="primary-btn" id="md-submit">分析する</button>
+        </form>
+        ${server.hasEnvKey ? '' : `
+        <p class="skill-note">APIキーは <a href="https://developer.riotgames.com" target="_blank" rel="noopener">developer.riotgames.com</a>
+        で無料発行できます (開発用キーは24時間で失効)。キーはこのブラウザと自分のサーバーにのみ送信されます。</p>`}
+      </section>
+      <div id="mydata-result"></div>`;
+
+    document.getElementById('mydata-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const result = document.getElementById('mydata-result');
+      const btn = document.getElementById('md-submit');
+
+      const riotId = document.getElementById('md-riotid').value.trim();
+      const parts = riotId.split('#');
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        result.innerHTML = '<div class="error-box"><p>Riot ID は「プレイヤー名#タグ」の形式で入力してください (例: Hide on bush#KR1)。</p></div>';
+        return;
+      }
+      const platform = document.getElementById('md-region').value;
+      const count = Number(document.getElementById('md-count').value);
+      const keyInput = document.getElementById('md-apikey');
+      const apiKey = keyInput ? keyInput.value.trim() : '';
+
+      localStorage.setItem(MyData.LS.riotId, riotId);
+      localStorage.setItem(MyData.LS.region, platform);
+      localStorage.setItem(MyData.LS.count, String(count));
+      if (apiKey) localStorage.setItem(MyData.LS.apiKey, apiKey);
+
+      btn.disabled = true;
+      result.innerHTML = '<div class="loading"><div class="spinner"></div><p id="md-progress">取得を開始…</p></div>';
+      const progress = (msg) => {
+        const el = document.getElementById('md-progress');
+        if (el) el.textContent = msg;
+      };
+
+      try {
+        const data = await MyData.fetchAll(
+          { gameName: parts[0], tagLine: parts[1], platform, count, apiKey }, progress);
+        const stats = MyData.analyze(data.matches, data.account.puuid);
+        result.innerHTML = myDataDashboardHtml(data, stats);
+      } catch (err) {
+        result.innerHTML = `<div class="error-box"><h3>取得に失敗しました</h3><p>${esc(err.message)}</p></div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  function rankCardHtml(league) {
+    const entries = (league || []).filter((l) =>
+      l.queueType === 'RANKED_SOLO_5x5' || l.queueType === 'RANKED_FLEX_SR');
+    if (!entries.length) return '<span class="rank-line">ランク情報なし</span>';
+    return entries.map((l) => {
+      const label = l.queueType === 'RANKED_SOLO_5x5' ? 'ソロ/デュオ' : 'フレックス';
+      const tier = MyData.TIER_LABELS[l.tier] || l.tier;
+      const total = l.wins + l.losses;
+      return `<span class="rank-line"><strong>${label}:</strong> ${esc(tier)} ${esc(l.rank || '')}
+        ${l.leaguePoints}LP (${l.wins}勝${l.losses}敗 / 勝率${pct(total ? l.wins / total : 0)})</span>`;
+    }).join('');
+  }
+
+  function statTilesHtml(o) {
+    const tiles = [
+      ['勝率', pct(o.winRate), `${o.wins}勝 ${o.games - o.wins}敗`],
+      ['KDA', num(o.kda, 2), `${num(o.kills)} / ${num(o.deaths)} / ${num(o.assists)}`],
+      ['CS / 分', num(o.csPerMin), '10分あたり ' + num(o.csPerMin * 10, 0)],
+      ['ビジョンスコア', num(o.vision), '1試合平均'],
+      ['試合数', String(o.games), 'リメイク除外'],
+    ];
+    return `<div class="stat-tiles">${tiles.map(([label, value, sub]) => `
+      <div class="stat-tile">
+        <span class="stat-label">${label}</span>
+        <span class="stat-value">${esc(value)}</span>
+        <span class="stat-sub">${esc(sub)}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  function winBarHtml(rate) {
+    return `<span class="winbar"><span class="winbar-fill" style="width:${Math.round(rate * 100)}%"></span></span>`;
+  }
+
+  function championTableHtml(byChampion) {
+    return `
+      <table class="stats-table">
+        <thead><tr><th>チャンピオン</th><th>試合</th><th>勝率</th><th>KDA</th></tr></thead>
+        <tbody>
+          ${byChampion.slice(0, 10).map((g) => {
+            const champ = findChampion(g.key);
+            return `<tr>
+              <td class="champ-cell">
+                ${champ ? `<img src="${DDragon.championIcon(champ)}" alt="">` : ''}
+                ${champ
+                  ? `<a href="#/champion/${encodeURIComponent(champ.id)}">${esc(champ.name)}</a>`
+                  : esc(g.key)}
+              </td>
+              <td>${g.games}</td>
+              <td>${pct(g.winRate)} ${winBarHtml(g.winRate)}</td>
+              <td>${num(g.kda, 2)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function roleTableHtml(byRole) {
+    const rows = byRole.filter((g) => MyData.ROLE_LABELS[g.key]);
+    if (!rows.length) return '<p class="empty">ロール情報がありません (ARAM等はロール集計対象外)。</p>';
+    return `
+      <table class="stats-table">
+        <thead><tr><th>ロール</th><th>試合</th><th>勝率</th><th>KDA</th></tr></thead>
+        <tbody>
+          ${rows.map((g) => `<tr>
+            <td>${MyData.ROLE_LABELS[g.key]}</td>
+            <td>${g.games}</td>
+            <td>${pct(g.winRate)} ${winBarHtml(g.winRate)}</td>
+            <td>${num(g.kda, 2)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function matchRowHtml(r) {
+    const champ = findChampion(r.champion);
+    const keystone = r.keystone ? findRune(r.keystone) : null;
+    return `
+      <div class="match-row ${r.win ? 'match-win' : 'match-loss'}">
+        <span class="match-result">${r.win ? '勝利' : '敗北'}</span>
+        <span class="match-champ">
+          ${champ ? `<img src="${DDragon.championIcon(champ)}" alt="">` : ''}
+          ${champ ? `<a href="#/champion/${encodeURIComponent(champ.id)}">${esc(champ.name)}</a>` : esc(r.champion)}
+        </span>
+        ${keystone ? `<img class="match-keystone" src="${DDragon.runeIcon(keystone.icon)}" alt="" title="${esc(keystone.name)}">` : ''}
+        <span class="match-kda"><strong>${r.kills} / ${r.deaths} / ${r.assists}</strong></span>
+        <span class="match-meta">CS ${r.cs} (${num(r.cs / r.durationMin)}/分)</span>
+        <span class="match-items">
+          ${r.items.map((id) => `<img src="${DDragon.itemIcon(id)}" alt="" title="${esc((DDragon.state.items[id] || {}).name || '')}">`).join('')}
+        </span>
+        <span class="match-meta">${MyData.QUEUE_LABELS[r.queueId] || 'その他'} · ${Math.round(r.durationMin)}分 · ${timeAgo(r.gameCreation)}</span>
+      </div>`;
+  }
+
+  function myDataDashboardHtml(data, stats) {
+    const { account, summoner } = data;
+    if (!stats.overall) {
+      return '<div class="error-box"><p>集計対象の試合が見つかりませんでした。</p></div>';
+    }
+    return `
+      <section class="panel">
+        <div class="mydata-profile">
+          <div>
+            <h3>${esc(account.gameName)} <small class="tagline">#${esc(account.tagLine)}</small></h3>
+            ${summoner ? `<span class="rank-line">レベル ${summoner.summonerLevel}</span>` : ''}
+            ${rankCardHtml(data.league)}
+          </div>
+        </div>
+        ${statTilesHtml(stats.overall)}
+      </section>
+      <section class="panel">
+        <div class="build-grid">
+          <div class="build-col">
+            <h4>チャンピオン別成績</h4>
+            ${championTableHtml(stats.byChampion)}
+          </div>
+          <div class="build-col">
+            <h4>ロール別成績</h4>
+            ${roleTableHtml(stats.byRole)}
+          </div>
+        </div>
+      </section>
+      <section class="panel">
+        <h3>最近の試合</h3>
+        <div class="match-list">${stats.recent.map(matchRowHtml).join('')}</div>
       </section>`;
   }
 
