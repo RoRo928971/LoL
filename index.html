@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LoL ビルドコンパニオン</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1 class="logo"><span class="logo-mark">⚔</span> LoL ビルドコンパニオン</h1>
+      <nav class="tabs" id="nav-tabs">
+        <button class="tab active" data-view="champions">チャンピオン</button>
+        <button class="tab" data-view="items">アイテム図鑑</button>
+        <button class="tab" data-view="runes">ルーン図鑑</button>
+      </nav>
+      <div class="version-badge" id="version-badge">読み込み中…</div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Data Dragon からデータを取得しています…</p>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p>データ提供: Riot Games <a href="https://developer.riotgames.com/docs/lol#data-dragon" target="_blank" rel="noopener">Data Dragon</a> ·
+    本アプリは Riot Games の公認・後援を受けていない非公式ファンツールです。</p>
+  </footer>
+
+  <script src="js/ddragon.js"></script>
+  <script src="js/archetypes.js"></script>
+  <script src="js/recommend.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
