@@ -29,6 +29,7 @@
     else if (view === 'items') renderItems();
     else if (view === 'runes') renderRunes();
     else if (view === 'mydata') renderMyData();
+    else if (view === 'planner') renderPlanner();
     else renderChampions();
   }
 
@@ -441,6 +442,219 @@
               </div>`).join('')}
           </div>`).join('')}
       </section>`;
+  }
+
+  // ---------------- 試合プラン (チーム構成分析) ----------------
+
+  const PLAN_LS = 'lolcomp.plan';
+
+  function loadPlan() {
+    try {
+      const p = JSON.parse(localStorage.getItem(PLAN_LS));
+      if (p && Array.isArray(p.allies) && Array.isArray(p.enemies)) return p;
+    } catch (e) { /* 破損時は初期化 */ }
+    return { allies: ['', '', '', '', ''], enemies: ['', '', '', '', ''], archetype: '' };
+  }
+
+  function champSelectHtml(id, value, placeholder, allChamps) {
+    return `
+      <select class="plan-select" id="${id}">
+        <option value="">${placeholder}</option>
+        ${allChamps.map((c) =>
+          `<option value="${esc(c.id)}" ${c.id === value ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+      </select>`;
+  }
+
+  function renderPlanner() {
+    const allChamps = Object.values(DDragon.state.champions)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    const plan = loadPlan();
+
+    main.innerHTML = `
+      <section class="panel">
+        <h3>試合プラン</h3>
+        <p class="skill-note">試合のチャンピオンを設定すると、チームバランス・あなた用のアイテムビルド・戦い方を自動で分析します。
+        分かる範囲の入力でも動作します (最低: 自分のチャンピオン)。</p>
+        <div class="plan-form">
+          <div class="plan-team">
+            <h4>味方チーム</h4>
+            <div class="plan-slot plan-slot-self">
+              <span class="plan-slot-label">自分</span>
+              ${champSelectHtml('plan-ally-0', plan.allies[0], '自分のチャンピオン…', allChamps)}
+              <select class="plan-select" id="plan-archetype"></select>
+            </div>
+            ${[1, 2, 3, 4].map((i) => `
+              <div class="plan-slot">
+                <span class="plan-slot-label">味方</span>
+                ${champSelectHtml(`plan-ally-${i}`, plan.allies[i], `味方 ${i + 1}…`, allChamps)}
+              </div>`).join('')}
+          </div>
+          <div class="plan-team">
+            <h4>敵チーム</h4>
+            ${[0, 1, 2, 3, 4].map((i) => `
+              <div class="plan-slot">
+                <span class="plan-slot-label">敵</span>
+                ${champSelectHtml(`plan-enemy-${i}`, plan.enemies[i], `敵 ${i + 1}…`, allChamps)}
+              </div>`).join('')}
+          </div>
+        </div>
+        <button class="chip" id="plan-clear">すべてクリア</button>
+      </section>
+      <div id="plan-result"></div>`;
+
+    const archetypeSelect = document.getElementById('plan-archetype');
+    const syncArchetypeOptions = () => {
+      const own = DDragon.state.champions[plan.allies[0]];
+      const detected = own ? Archetypes.detect(own) : null;
+      const current = plan.archetype || detected;
+      archetypeSelect.innerHTML = own
+        ? Object.entries(Archetypes.DEFS).map(([key, d]) =>
+            `<option value="${key}" ${key === current ? 'selected' : ''}>${d.label}${key === detected ? ' (自動)' : ''}</option>`).join('')
+        : '<option value="">プレイスタイル</option>';
+      archetypeSelect.disabled = !own;
+    };
+
+    const save = () => localStorage.setItem(PLAN_LS, JSON.stringify(plan));
+
+    const compute = () => {
+      syncArchetypeOptions();
+      document.getElementById('plan-result').innerHTML = planResultHtml(plan);
+      bindItemTooltips();
+    };
+
+    for (let i = 0; i < 5; i++) {
+      document.getElementById(`plan-ally-${i}`).addEventListener('change', (e) => {
+        plan.allies[i] = e.target.value;
+        if (i === 0) plan.archetype = ''; // 自分を変えたらプレイスタイルは自動判定に戻す
+        save(); compute();
+      });
+      document.getElementById(`plan-enemy-${i}`).addEventListener('change', (e) => {
+        plan.enemies[i] = e.target.value; save(); compute();
+      });
+    }
+    archetypeSelect.addEventListener('change', (e) => {
+      plan.archetype = e.target.value; save(); compute();
+    });
+    document.getElementById('plan-clear').addEventListener('click', () => {
+      plan.allies = ['', '', '', '', '']; plan.enemies = ['', '', '', '', '']; plan.archetype = '';
+      save(); renderPlanner();
+    });
+
+    compute();
+  }
+
+  function teamCardHtml(title, champs, analysis, extraClass) {
+    if (!champs.length) {
+      return `<div class="team-card ${extraClass}"><h4>${title}</h4><p class="empty">チャンピオン未設定</p></div>`;
+    }
+    const t = analysis;
+    const phys = Math.round(t.physShare * 100);
+    return `
+      <div class="team-card ${extraClass}">
+        <h4>${title}</h4>
+        <div class="team-icons">
+          ${champs.map((c) => `<img src="${DDragon.championIcon(c)}" alt="" title="${esc(c.name)}">`).join('')}
+        </div>
+        <div class="dmg-bar-row">
+          <span class="dmg-label">ダメージ</span>
+          <span class="dmg-bar">
+            <span class="dmg-phys" style="width:${phys}%"></span><span class="dmg-mag" style="width:${100 - phys}%"></span>
+          </span>
+          <span class="dmg-nums">物理 ${phys}% / 魔法 ${100 - phys}%</span>
+        </div>
+        <div class="team-stats">
+          <span class="team-stat">前衛 <strong>${t.frontline}</strong></span>
+          <span class="team-stat">エンゲージ <strong>${t.engage}</strong></span>
+          <span class="team-stat">ポーク <strong>${t.poke}</strong></span>
+          <span class="team-stat">バースト <strong>${t.burst}</strong></span>
+          <span class="team-stat">後半型 <strong>${t.lateGame}</strong></span>
+        </div>
+        ${t.sustainNames.length ? `<p class="team-note">回復が強力: ${t.sustainNames.map(esc).join('・')}</p>` : ''}
+        ${t.compType ? `<p class="team-type">${t.compType.name}</p>` : ''}
+      </div>`;
+  }
+
+  function planResultHtml(plan) {
+    const champs = DDragon.state.champions;
+    const own = champs[plan.allies[0]];
+    if (!own) {
+      return '<section class="panel"><p class="empty">自分のチャンピオンを選択すると分析が表示されます。</p></section>';
+    }
+    const allyChamps = plan.allies.filter((id) => champs[id]).map((id) => champs[id]);
+    const enemyChamps = plan.enemies.filter((id) => champs[id]).map((id) => champs[id]);
+    const archetypeKey = plan.archetype || Archetypes.detect(own);
+    const def = Archetypes.DEFS[archetypeKey];
+
+    const allyAnalysis = TeamComp.analyzeTeam(allyChamps);
+    const enemyAnalysis = enemyChamps.length ? TeamComp.analyzeTeam(enemyChamps) : null;
+    const warns = TeamComp.warnings(allyAnalysis);
+
+    // ビルド: 基本はアーキタイプ推薦、敵構成があれば対策を統合
+    const itemSet = Recommend.buildItemSet(DDragon.state.items, def);
+    let boots = itemSet.boots;
+    let bootsReason = '';
+    let counters = [];
+    if (enemyAnalysis) {
+      const override = TeamComp.recommendBoots(DDragon.state.items, archetypeKey, enemyAnalysis);
+      if (override) { boots = override; bootsReason = override.reason; }
+      counters = Matchup.counterItems(DDragon.state.items, archetypeKey, TeamComp.buildThreats(enemyAnalysis));
+    }
+    const tips = enemyAnalysis ? TeamComp.advice(own, archetypeKey, allyAnalysis, enemyAnalysis) : [];
+
+    return `
+      <section class="panel">
+        <h3>チームバランス</h3>
+        <div class="team-grid">
+          ${teamCardHtml('味方チーム', allyChamps, allyAnalysis, 'team-ally')}
+          ${enemyAnalysis
+            ? teamCardHtml('敵チーム', enemyChamps, enemyAnalysis, 'team-enemy')
+            : '<div class="team-card team-enemy"><h4>敵チーム</h4><p class="empty">敵チャンピオンを選択すると対策が精密になります。</p></div>'}
+        </div>
+        ${warns.length ? `
+          <div class="warn-list">
+            ${warns.map((w) => `<p class="warn-item">⚠ ${esc(w)}</p>`).join('')}
+          </div>` : ''}
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>あなたのビルド — ${esc(own.name)}</h3>
+          <a class="back-link" href="#/champion/${encodeURIComponent(own.id)}">チャンピオン詳細 →</a>
+        </div>
+        <div class="build-grid">
+          <div class="build-col">
+            <div class="item-group">
+              <span class="group-label">スタート</span>
+              <div class="item-row">${itemSet.starters.map(itemChip).join('') || '<span class="empty">-</span>'}</div>
+            </div>
+            <div class="item-group">
+              <span class="group-label">ブーツ${bootsReason ? ` — ${esc(bootsReason)}` : ''}</span>
+              <div class="item-row">${boots ? itemChip(boots) : '<span class="empty">-</span>'}</div>
+            </div>
+            <div class="item-group">
+              <span class="group-label">コアアイテム (ビルド順)</span>
+              <div class="item-row">${itemSet.core.map(itemChip).join('')}</div>
+            </div>
+          </div>
+          <div class="build-col">
+            ${counters.length ? `
+              <span class="group-label">敵構成への対策 (優先度順)</span>
+              ${counters.map((c) => `
+                <div class="item-group">
+                  <span class="group-label"><span class="need-tag">${esc(c.label)}</span> ${esc(c.desc)}</span>
+                  <div class="item-row">${c.entries.map(itemChip).join('')}</div>
+                </div>`).join('')}` : `
+              <span class="group-label">状況に応じた選択肢</span>
+              <div class="item-row">${itemSet.situational.slice(0, 4).map(itemChip).join('')}</div>`}
+          </div>
+        </div>
+      </section>
+
+      ${tips.length ? `
+      <section class="panel">
+        <h3>戦い方 <span class="badge badge-auto">自動分析</span></h3>
+        <ul class="tips-list">${tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+      </section>` : ''}`;
   }
 
   // ---------------- マイデータ (戦績分析) ----------------
