@@ -8,7 +8,7 @@
     ['Fighter', 'ファイター'], ['Tank', 'タンク'], ['Mage', 'メイジ'],
     ['Assassin', 'アサシン'], ['Marksman', 'マークスマン'], ['Support', 'サポート'],
   ];
-  const ui = { champSearch: '', champRole: '', itemSearch: '' };
+  const ui = { champSearch: '', champRole: '', itemSearch: '', opponentId: '' };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -87,10 +87,17 @@
 
     let archetypeKey = Archetypes.detect(summary);
 
+    const allChamps = Object.values(DDragon.state.champions)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
     const draw = () => {
       const def = Archetypes.DEFS[archetypeKey];
       const runePage = Recommend.buildRunePage(DDragon.state.runeTrees, def);
       const itemSet = Recommend.buildItemSet(DDragon.state.items, def);
+
+      const opponent = ui.opponentId ? DDragon.state.champions[ui.opponentId] : null;
+      const threats = opponent ? Matchup.threatProfile(opponent) : [];
+      const counters = opponent ? Matchup.counterItems(DDragon.state.items, archetypeKey, threats) : [];
 
       main.innerHTML = `
         <section class="champ-hero" style="background-image:
@@ -115,13 +122,28 @@
         <section class="panel">
           <div class="panel-head">
             <h3>おすすめビルド</h3>
-            <label class="archetype-select">プレイスタイル:
-              <select id="archetype-select">
-                ${Object.entries(Archetypes.DEFS).map(([key, d]) =>
-                  `<option value="${key}" ${key === archetypeKey ? 'selected' : ''}>${d.label}</option>`).join('')}
-              </select>
-            </label>
+            <div class="build-controls">
+              <label class="archetype-select">プレイスタイル:
+                <select id="archetype-select">
+                  ${Object.entries(Archetypes.DEFS).map(([key, d]) =>
+                    `<option value="${key}" ${key === archetypeKey ? 'selected' : ''}>${d.label}</option>`).join('')}
+                </select>
+              </label>
+              <label class="archetype-select">対面:
+                <select id="opponent-select">
+                  <option value="">選択なし</option>
+                  ${allChamps.map((c) =>
+                    `<option value="${esc(c.id)}" ${c.id === ui.opponentId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+                </select>
+              </label>
+            </div>
           </div>
+          ${opponent ? `
+            <div class="matchup-bar">
+              <img src="${DDragon.championIcon(opponent)}" alt="">
+              <span class="matchup-name">vs ${esc(opponent.name)}</span>
+              ${threats.map((t) => `<span class="threat-chip threat-${t}">${Matchup.THREAT_LABELS[t]}</span>`).join('')}
+            </div>` : ''}
 
           <div class="build-grid">
             <div class="build-col">
@@ -131,15 +153,26 @@
             <div class="build-col">
               <h4>アイテムビルド</h4>
               ${itemSetHtml(itemSet)}
+              ${counters.length ? `
+                <h4 class="counter-head">対面対策アイテム <small>(vs ${esc(opponent.name)})</small></h4>
+                ${counters.map((c) => `
+                  <div class="item-group">
+                    <span class="group-label"><span class="need-tag">${esc(c.label)}</span> ${esc(c.desc)}</span>
+                    <div class="item-row">${c.entries.map(itemChip).join('')}</div>
+                  </div>`).join('')}` : ''}
             </div>
           </div>
         </section>
 
+        ${skillOrderHtml(championId, detail)}
         ${detail ? spellsHtml(detail) : ''}`;
 
       document.getElementById('archetype-select').addEventListener('change', (e) => {
         archetypeKey = e.target.value; draw();
         document.getElementById('main').scrollIntoView();
+      });
+      document.getElementById('opponent-select').addEventListener('change', (e) => {
+        ui.opponentId = e.target.value; draw();
       });
       bindItemTooltips();
     };
@@ -220,6 +253,48 @@
         </div>
         <p class="build-total">コアビルド合計: <strong>${gold(Recommend.totalGold(set))}</strong></p>
       </div>`;
+  }
+
+  function skillOrderHtml(championId, detail) {
+    const so = SkillOrder.get(championId);
+    if (so.special) {
+      return `
+        <section class="panel">
+          <h3>スキル上げの順番</h3>
+          <p class="skill-note">${esc(so.special)}</p>
+        </section>`;
+    }
+
+    const KEY_INDEX = { Q: 0, W: 1, E: 2 };
+    const spellCell = (key) => {
+      const spell = detail && detail.spells && detail.spells[KEY_INDEX[key]];
+      return `
+        <span class="skill-step">
+          ${spell ? `<img src="${DDragon.spellIcon(spell)}" alt="" title="${esc(spell.name)}">` : ''}
+          <span class="skill-key-big">${key}</span>
+          ${spell ? `<span class="skill-spell-name">${esc(spell.name)}</span>` : ''}
+        </span>`;
+    };
+
+    return `
+      <section class="panel">
+        <div class="panel-head">
+          <h3>スキル上げの順番</h3>
+          <span class="badge ${so.curated ? 'badge-curated' : 'badge-auto'}">
+            ${so.curated ? '定番オーダー' : '目安 (自動推定)'}
+          </span>
+        </div>
+        <div class="skill-order">
+          <span class="skill-step skill-step-r">
+            <span class="skill-key-big">R</span>
+            <span class="skill-spell-name">Lv6 / 11 / 16 で最優先</span>
+          </span>
+          <span class="skill-arrow">›</span>
+          ${so.order.map(spellCell).join('<span class="skill-arrow">›</span>')}
+        </div>
+        <p class="skill-note">序盤 (Lv1〜3) は ${so.order.join(' → ')} の順で1つずつ取得するのが目安です。
+        ${so.curated ? '' : 'このチャンピオンは収録外のため、一般的な傾向からの推定表示です。'}</p>
+      </section>`;
   }
 
   function spellsHtml(detail) {

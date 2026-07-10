@@ -142,6 +142,7 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px; }
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
 }
+.build-controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 .archetype-select { font-size: 13px; color: var(--text-dim); }
 .archetype-select select {
   margin-left: 8px; padding: 7px 10px; font-size: 13px;
@@ -199,6 +200,60 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px; }
 .item-gold { font-size: 11px; color: var(--gold); }
 .build-total { margin-top: 6px; font-size: 13px; color: var(--text-dim); }
 .build-total strong { color: var(--gold); }
+
+/* ---------- 対面対策 ---------- */
+.matchup-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 16px;
+}
+.matchup-bar img { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); }
+.matchup-name { color: var(--gold-bright); font-weight: 600; font-size: 14px; }
+.threat-chip {
+  font-size: 11px; border-radius: 999px; padding: 3px 12px;
+  border: 1px solid var(--border); color: var(--text-dim);
+}
+.threat-physical { color: var(--ad); border-color: var(--ad); }
+.threat-magic { color: var(--ap); border-color: var(--ap); }
+.threat-sustain { color: var(--def); border-color: var(--def); }
+.threat-burst { color: #f0b34a; border-color: #f0b34a; }
+.threat-tanky { color: var(--accent); border-color: var(--accent); }
+
+.counter-head {
+  color: var(--gold); font-size: 14px; margin: 18px 0 12px;
+  border-bottom: 1px solid var(--border); padding-bottom: 6px;
+}
+.counter-head small { color: var(--text-dim); font-weight: normal; }
+.need-tag {
+  display: inline-block; font-size: 10px; color: var(--gold);
+  border: 1px solid var(--gold); border-radius: 4px; padding: 0 6px; margin-right: 6px;
+}
+
+/* ---------- スキルオーダー ---------- */
+.badge {
+  font-size: 11px; border-radius: 999px; padding: 3px 12px; border: 1px solid;
+}
+.badge-curated { color: var(--def); border-color: var(--def); }
+.badge-auto { color: var(--text-dim); border-color: var(--border); }
+
+.skill-order {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 10px;
+}
+.skill-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 12px;
+}
+.skill-step-r { border-color: var(--gold); }
+.skill-step img { width: 32px; height: 32px; border-radius: 6px; }
+.skill-key-big {
+  display: inline-block; width: 26px; height: 26px; line-height: 26px; text-align: center;
+  background: var(--gold); color: #0a0e17; font-size: 14px; font-weight: bold; border-radius: 5px;
+}
+.skill-step-r .skill-key-big { background: var(--accent); }
+.skill-spell-name { font-size: 12px; color: var(--text-dim); }
+.skill-arrow { color: var(--gold); font-size: 20px; }
+.skill-note { font-size: 12px; color: var(--text-dim); }
 
 /* ---------- スキル ---------- */
 .spell-list { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
