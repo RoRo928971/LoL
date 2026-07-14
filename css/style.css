@@ -442,6 +442,87 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px; }
   width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--border);
 }
 
+/* ---------- 試合詳細分析 ---------- */
+.review-link {
+  margin-left: auto; font-size: 12px; white-space: nowrap;
+}
+.review-head { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.review-vs { display: flex; align-items: center; gap: 12px; }
+.review-vs img { width: 52px; height: 52px; border-radius: 10px; border: 1px solid var(--border); }
+.review-vs h3 { color: var(--gold-bright); font-size: 20px; }
+.review-opp img { width: 40px; height: 40px; }
+.vs-label { font-size: 11px; color: var(--text-dim); }
+.txt-win { color: var(--def); font-size: 14px; margin-left: 8px; }
+.txt-loss { color: var(--ad); font-size: 14px; margin-left: 8px; }
+
+.kw-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--bg-card); border: 1px solid var(--border); border-left-width: 4px;
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px;
+}
+.kw-kill { border-left-color: var(--gold); }
+.kw-pressure { border-left-color: var(--accent); }
+.kw-time { font-weight: 700; color: var(--gold-bright); min-width: 72px; }
+.kw-kill .kw-verdict { color: var(--gold); font-weight: 700; }
+.kw-pressure .kw-verdict { color: var(--accent); font-weight: 700; }
+.kw-detail { color: var(--text-dim); font-size: 12px; }
+
+.item-effect-row {
+  display: flex; gap: 12px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.item-effect-row img { width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; }
+.item-effect-body { font-size: 13px; }
+.item-effect-body strong { color: var(--gold-bright); }
+.item-effect-body p { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.item-effect-time { font-size: 12px; color: var(--gold); margin-left: 8px; }
+.item-effect-dmg { font-variant-numeric: tabular-nums; }
+.delta-chip {
+  font-size: 11px; border-radius: 999px; padding: 2px 10px; margin-left: 8px; border: 1px solid;
+}
+.delta-up { color: var(--def); border-color: var(--def); }
+.delta-down { color: var(--text-dim); border-color: var(--border); }
+
+.review-map { width: 100%; max-width: 340px; border: 1px solid var(--border); border-radius: 10px; background: #0c1120; }
+.review-map polyline { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.path-early { stroke: rgba(10,200,185,.45); }
+.path-mid { stroke: rgba(10,200,185,.75); }
+.path-late { stroke: #0ac8b9; }
+.death-mark { fill: var(--ad); font-size: 15px; font-weight: bold; text-anchor: middle; cursor: help; }
+.map-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-swatch { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+.path-early-sw { background: rgba(10,200,185,.45); }
+.path-mid-sw { background: rgba(10,200,185,.75); }
+.path-late-sw { background: #0ac8b9; }
+.legend-death { color: var(--ad); font-weight: bold; }
+
+.gold-chart { width: 100%; max-width: 580px; }
+.gold-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.gold-dot { fill: var(--accent); cursor: help; }
+.axis-zero { stroke: var(--border); stroke-width: 1; }
+.axis-label { fill: var(--text-dim); font-size: 10px; text-anchor: middle; }
+.chart-end-label { fill: var(--text); font-size: 11px; font-weight: 600; }
+.review-stats { margin-top: 12px; }
+
+.death-row {
+  display: flex; gap: 12px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 8px;
+}
+.death-num {
+  width: 26px; height: 26px; line-height: 26px; text-align: center; flex-shrink: 0;
+  background: var(--ad); color: #0a0e17; font-weight: 700; border-radius: 50%; font-size: 13px;
+}
+.death-head { font-size: 13px; color: var(--text); }
+.death-head strong { color: var(--gold-bright); }
+.flag-chip {
+  font-size: 10px; color: #f0b34a; border: 1px solid rgba(240,179,74,.5);
+  border-radius: 999px; padding: 1px 8px; margin-left: 6px;
+}
+.death-advice { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
 /* ---------- ルーン図鑑 ---------- */
 .rune-catalog { display: flex; flex-direction: column; gap: 20px; }
 .rune-tree-card {

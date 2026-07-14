@@ -102,8 +102,8 @@ async function handleApi(req, res, urlPath) {
   try {
     const upstream = await fetch(target, { headers: { 'X-Riot-Token': apiKey } });
     const body = await upstream.text();
-    // マッチ詳細は不変データなので長期キャッシュ、その他は短期
-    const isMatchDetail = /\/lol\/match\/v5\/matches\/[^/]+$/.test(apiPath);
+    // マッチ詳細・タイムラインは不変データなので長期キャッシュ、その他は短期
+    const isMatchDetail = /\/lol\/match\/v5\/matches\/[^/]+(\/timeline)?$/.test(apiPath);
     if (upstream.ok) {
       cacheSet(target, upstream.status, body, isMatchDetail ? 24 * 3600 * 1000 : 60 * 1000);
     }

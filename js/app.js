@@ -22,14 +22,16 @@
   function route() {
     const hash = location.hash || '#/champions';
     const [, view, param] = hash.split('/');
+    const tabView = view === 'champion' ? 'champions' : view === 'review' ? 'mydata' : view;
     document.querySelectorAll('#nav-tabs .tab').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.view === (view === 'champion' ? 'champions' : view));
+      btn.classList.toggle('active', btn.dataset.view === tabView);
     });
     if (view === 'champion' && param) renderChampionDetail(decodeURIComponent(param));
     else if (view === 'items') renderItems();
     else if (view === 'runes') renderRunes();
     else if (view === 'mydata') renderMyData();
     else if (view === 'planner') renderPlanner();
+    else if (view === 'review' && param) renderReview(decodeURIComponent(param));
     else renderChampions();
   }
 
@@ -876,6 +878,7 @@
           ${r.items.map((id) => `<img src="${DDragon.itemIcon(id)}" alt="" title="${esc((DDragon.state.items[id] || {}).name || '')}">`).join('')}
         </span>
         <span class="match-meta">${MyData.QUEUE_LABELS[r.queueId] || 'その他'} · ${Math.round(r.durationMin)}分 · ${timeAgo(r.gameCreation)}</span>
+        ${r.matchId ? `<a class="review-link" href="#/review/${encodeURIComponent(r.matchId)}">詳細分析 →</a>` : ''}
       </div>`;
   }
 
@@ -910,6 +913,265 @@
       <section class="panel">
         <h3>最近の試合</h3>
         <div class="match-list">${stats.recent.map(matchRowHtml).join('')}</div>
+      </section>`;
+  }
+
+  // ---------------- 試合詳細分析 (リプレイ分析) ----------------
+
+  const fmtClock = (ts) => {
+    const s = Math.floor(ts / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  async function renderReview(matchId) {
+    main.innerHTML = '<div class="loading"><div class="spinner"></div><p id="rv-progress">確認中…</p></div>';
+    const progress = (msg) => {
+      const el = document.getElementById('rv-progress');
+      if (el) el.textContent = msg;
+    };
+
+    const server = await MyData.ping();
+    const riotId = localStorage.getItem(MyData.LS.riotId) || '';
+    const apiKey = server && server.hasEnvKey ? '' : (localStorage.getItem(MyData.LS.apiKey) || '');
+    const idParts = riotId.split('#');
+
+    if (!server) {
+      main.innerHTML = `<div class="error-box"><h3>中継サーバーが起動していません</h3>
+        <p>詳細分析には <code>node server.js</code> での起動が必要です。</p></div>`;
+      return;
+    }
+    if (idParts.length !== 2 || (!server.hasEnvKey && !apiKey)) {
+      main.innerHTML = `<div class="error-box"><h3>設定が必要です</h3>
+        <p>先に<a href="#/mydata">マイデータ</a>タブで Riot ID とAPIキーを設定し、一度分析を実行してください。</p></div>`;
+      return;
+    }
+
+    try {
+      const { account, match, timeline } = await Review.fetchAll(matchId, apiKey, idParts[0], idParts[1], progress);
+      const a = Review.analyze(match, timeline, account.puuid, DDragon.state.items);
+      if (!a) {
+        main.innerHTML = '<div class="error-box"><p>この試合にあなたが見つかりませんでした。</p></div>';
+        return;
+      }
+      main.innerHTML = reviewHtml(match, a);
+      bindItemTooltips();
+    } catch (err) {
+      main.innerHTML = `<div class="error-box"><h3>取得に失敗しました</h3><p>${esc(err.message)}</p></div>`;
+    }
+  }
+
+  function reviewMapSvg(a) {
+    const S = 320, MAX = 15000;
+    const px = (p) => (p.x / MAX) * S;
+    const py = (p) => S - (p.y / MAX) * S;
+    const phases = [
+      { label: '序盤 (〜10分)', cls: 'path-early', test: (m) => m <= 10 },
+      { label: '中盤 (10〜20分)', cls: 'path-mid', test: (m) => m > 10 && m <= 20 },
+      { label: '終盤 (20分〜)', cls: 'path-late', test: (m) => m > 20 },
+    ];
+    const lines = phases.map((ph) => {
+      const pts = a.series.filter((s) => s.myPos && ph.test(s.min))
+        .map((s) => `${px(s.myPos).toFixed(1)},${py(s.myPos).toFixed(1)}`);
+      return pts.length >= 2 ? `<polyline class="${ph.cls}" points="${pts.join(' ')}"/>` : '';
+    }).join('');
+    const deaths = a.myDeaths.filter((d) => d.pos).map((d) => `
+      <text class="death-mark" x="${px(d.pos).toFixed(1)}" y="${(py(d.pos) + 5).toFixed(1)}">✕<title>${fmtClock(d.ts)} デス</title></text>`).join('');
+    return `
+      <svg class="review-map" viewBox="0 0 ${S} ${S}" role="img" aria-label="マップ上の移動経路">
+        <image href="${DDragon.mapImage()}" x="0" y="0" width="${S}" height="${S}" opacity="0.85"/>
+        ${lines}${deaths}
+      </svg>
+      <div class="map-legend">
+        ${phases.map((p) => `<span class="legend-item"><span class="legend-swatch ${p.cls}-sw"></span>${p.label}</span>`).join('')}
+        <span class="legend-item"><span class="legend-death">✕</span>デス</span>
+      </div>`;
+  }
+
+  function goldChartSvg(a) {
+    const pts = a.series.filter((s) => s.goldDiff != null);
+    if (pts.length < 2) return '<p class="empty">対面が特定できないためゴールド差グラフは表示できません。</p>';
+    const W = 560, H = 170, L = 42, R = 20, T = 16, B = 26;
+    const lastMin = pts[pts.length - 1].min || 1;
+    const maxAbs = Math.max(600, ...pts.map((p) => Math.abs(p.goldDiff)));
+    const x = (m) => L + (m / lastMin) * (W - L - R);
+    const y = (v) => T + (H - T - B) / 2 - (v / maxAbs) * (H - T - B) / 2;
+    const line = pts.map((p) => `${x(p.min).toFixed(1)},${y(p.goldDiff).toFixed(1)}`).join(' ');
+    const ticks = [];
+    for (let m = 0; m <= lastMin; m += 5) ticks.push(m);
+    const marks = [10, 15, 20].filter((m) => m <= lastMin).map((m) => {
+      const p = pts.find((q) => q.min === m);
+      return p ? `${m}分: ${p.goldDiff > 0 ? '+' : ''}${p.goldDiff.toLocaleString()}G` : null;
+    }).filter(Boolean);
+    const last = pts[pts.length - 1];
+    return `
+      <svg class="gold-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="対面とのゴールド差の推移">
+        <line class="axis-zero" x1="${L}" y1="${y(0)}" x2="${W - R}" y2="${y(0)}"/>
+        ${ticks.map((m) => `<text class="axis-label" x="${x(m)}" y="${H - 8}">${m}</text>`).join('')}
+        <text class="axis-label" x="${L - 6}" y="${y(maxAbs) + 4}" text-anchor="end">+${maxAbs.toLocaleString()}</text>
+        <text class="axis-label" x="${L - 6}" y="${y(-maxAbs) + 4}" text-anchor="end">-${maxAbs.toLocaleString()}</text>
+        <polyline class="gold-line" points="${line}"/>
+        ${pts.map((p) => `<circle class="gold-dot" cx="${x(p.min).toFixed(1)}" cy="${y(p.goldDiff).toFixed(1)}" r="3.5">
+          <title>${p.min}分: ${p.goldDiff > 0 ? '+' : ''}${p.goldDiff}G (CS差 ${p.csDiff > 0 ? '+' : ''}${p.csDiff})</title></circle>`).join('')}
+        <text class="chart-end-label" x="${x(last.min) - 4}" y="${y(last.goldDiff) - 8}" text-anchor="end">${last.goldDiff > 0 ? '+' : ''}${last.goldDiff.toLocaleString()}G</text>
+      </svg>
+      ${marks.length ? `<p class="skill-note">対面とのゴールド差 — ${marks.join(' / ')}</p>` : ''}`;
+  }
+
+  function killWindowsHtml(a) {
+    if (!a.opp) return '<p class="empty">対面レーナーが特定できない試合 (ARAM等) のため、キルチャンス分析は対象外です。</p>';
+    if (!a.hasStats) return '<p class="empty">この試合のタイムラインにはステータス情報が含まれていないため、キルチャンス分析は表示できません。</p>';
+
+    const oppChamp = findChampion(a.opp.championName);
+    const rows = a.killWindows.map((w) => {
+      const range = w.startMin === w.endMin ? `${w.startMin}分` : `${w.startMin}〜${w.endMin}分`;
+      const hpPct = Math.round(w.best.oppHpPct * 100);
+      return `
+        <div class="kw-row kw-${w.verdict}">
+          <span class="kw-time">${range}</span>
+          <span class="kw-verdict">${w.verdict === 'kill' ? 'キル圏内 (推定)' : 'プレッシャー可'}</span>
+          <span class="kw-detail">推定バースト ${Math.round(w.best.burst).toLocaleString()} vs 対面の体力 ${Math.round(w.best.oppHp).toLocaleString()} (${hpPct}%)</span>
+        </div>`;
+    }).join('');
+
+    const notes = [];
+    if (a.firstTo6) {
+      if (a.firstTo6.myMin < a.firstTo6.oppMin) {
+        notes.push(`レベル6到達があなた ${a.firstTo6.myMin}分・対面 ${a.firstTo6.oppMin}分。この間はアルティメット差でオールインのチャンスでした。`);
+      } else if (a.firstTo6.myMin > a.firstTo6.oppMin) {
+        notes.push(`対面が先にレベル6到達 (${a.firstTo6.oppMin}分、あなたは${a.firstTo6.myMin}分)。この間は仕掛けられる危険な時間帯でした。`);
+      }
+    }
+    const leadMins = a.levelLeads.reduce((s, l) => s + (l.endMin - l.startMin + 1), 0);
+    if (leadMins >= 2) notes.push(`レベル先行していた時間は合計約${leadMins}分。レベル差がある間が仕掛け時です。`);
+    if (a.coreTiming) {
+      const d = Math.round((a.coreTiming.oppFirst - a.coreTiming.myFirst) / 1000);
+      if (d > 30) notes.push(`最初のコアアイテム完成が対面より${Math.round(d / 60)}分${Math.abs(d % 60)}秒早く、アイテムパワースパイクで有利な時間帯がありました。`);
+      else if (d < -30) notes.push(`対面の方がコアアイテム完成が早く (差 ${Math.round(-d / 60)}分${Math.abs(d % 60)}秒)、その間は無理な交戦を避けるべき時間帯でした。`);
+    }
+
+    return `
+      ${rows || `<p class="empty">${esc(oppChamp ? oppChamp.name : a.opp.championName)} をキル圏内と推定できる時間帯はありませんでした (お互い近くにいた時間帯のみ判定)。</p>`}
+      ${notes.length ? `<ul class="tips-list">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      <p class="skill-note">推定モデル: 約3秒の交戦で スキル (AD×2.1 + AP×2.3) + 通常攻撃2.5秒分 を、
+      その時点の対面の物理/魔法防御で軽減して計算。1分ごとのスナップショットに基づく目安です。</p>`;
+  }
+
+  function itemEffectsHtml(a) {
+    if (!a.corePurchases.length) return '<p class="empty">完成アイテムの購入が記録されていません。</p>';
+    const rows = a.corePurchases.map((p) => {
+      const it = p.item;
+      const delta = p.dmgBefore > 20 ? Math.round((p.dmgAfter - p.dmgBefore) / p.dmgBefore * 100) : null;
+      return `
+        <div class="item-effect-row">
+          <img src="${DDragon.itemIcon(p.itemId)}" alt="">
+          <div class="item-effect-body">
+            <div><strong>${esc(it ? it.name : `アイテム ${p.itemId}`)}</strong>
+              <span class="item-effect-time">${fmtClock(p.ts)} 完成</span>
+              ${delta != null ? `<span class="delta-chip ${delta >= 0 ? 'delta-up' : 'delta-down'}">ダメージ/分 ${delta >= 0 ? '+' : ''}${delta}%</span>` : ''}
+            </div>
+            ${it ? `<p>${esc(it.plaintext || stripTags(it.description).slice(0, 110))}</p>` : ''}
+            <p class="item-effect-dmg">対チャンピオンダメージ: 完成前 ${Math.round(p.dmgBefore).toLocaleString()}/分 → 完成後 ${Math.round(p.dmgAfter).toLocaleString()}/分</p>
+          </div>
+        </div>`;
+    }).join('');
+    const timing = a.coreTiming ? (() => {
+      const d = Math.round((a.coreTiming.oppFirst - a.coreTiming.myFirst) / 1000);
+      const label = d >= 0 ? `対面より ${Math.floor(Math.abs(d) / 60)}分${Math.abs(d) % 60}秒 早い` : `対面より ${Math.floor(Math.abs(d) / 60)}分${Math.abs(d) % 60}秒 遅い`;
+      return `<p class="skill-note">最初のコアアイテム完成: あなた ${fmtClock(a.coreTiming.myFirst)} / 対面 ${fmtClock(a.coreTiming.oppFirst)} (${label})</p>`;
+    })() : '';
+    return rows + timing;
+  }
+
+  function deathReviewHtml(a) {
+    if (!a.myDeaths.length) return '<p class="empty">デスなし。素晴らしい生存力です。</p>';
+    return a.myDeaths.map((d, i) => {
+      const advice = [];
+      if (d.earlyGank) advice.push('序盤のガンクによるデスです。ミニマップの確認と川の視界を意識しましょう。');
+      if (d.solo) advice.push('味方から離れた単独デスです。視界のない場所で1人にならない位置取りを心がけましょう。');
+      if (d.unspentGold >= 1300) advice.push(`未使用ゴールド ${d.unspentGold.toLocaleString()}G を抱えたままのデスです。先に買い物をしていればステータス差で勝てた可能性があります。`);
+      if (!advice.length) advice.push('集団戦の中でのデスです。フォーカスされない位置取りと下がるタイミングを振り返りましょう。');
+      return `
+        <div class="death-row">
+          <span class="death-num">${i + 1}</span>
+          <div>
+            <div class="death-head">
+              <strong>${fmtClock(d.ts)}</strong>
+              ${d.killerName ? ` — ${esc(d.killerName)} にキルされた` : ''}
+              ${d.earlyGank ? '<span class="flag-chip">序盤ガンク</span>' : ''}
+              ${d.solo ? '<span class="flag-chip">単独デス</span>' : ''}
+              ${d.unspentGold >= 1300 ? `<span class="flag-chip">未使用 ${d.unspentGold.toLocaleString()}G</span>` : ''}
+            </div>
+            <p class="death-advice">${advice.map(esc).join(' ')}</p>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function reviewHtml(match, a) {
+    const myChamp = findChampion(a.me.championName);
+    const oppChamp = a.opp ? findChampion(a.opp.championName) : null;
+    const teamKills = match.info.participants
+      .filter((p) => p.teamId === a.me.teamId)
+      .reduce((s, p) => s + (p.kills || 0), 0);
+    const kp = teamKills ? Math.min(100, Math.round((a.me.kills + a.me.assists) / teamKills * 100)) : 0;
+
+    return `
+      <section class="panel">
+        <a class="back-link" href="#/mydata">← マイデータへ戻る</a>
+        <div class="review-head">
+          <div class="review-vs">
+            ${myChamp ? `<img src="${DDragon.championIcon(myChamp)}" alt="">` : ''}
+            <div>
+              <h3>${esc(myChamp ? myChamp.name : a.me.championName)}
+                <span class="${a.me.win ? 'txt-win' : 'txt-loss'}">${a.me.win ? '勝利' : '敗北'}</span></h3>
+              <span class="rank-line">${a.me.kills} / ${a.me.deaths} / ${a.me.assists} · キル関与 ${kp}%
+                · ${MyData.QUEUE_LABELS[match.info.queueId] || 'その他'} · ${Math.round(match.info.gameDuration / 60)}分</span>
+            </div>
+          </div>
+          ${a.opp ? `
+          <div class="review-vs review-opp">
+            <span class="vs-label">対面</span>
+            ${oppChamp ? `<img src="${DDragon.championIcon(oppChamp)}" alt="">` : ''}
+            <strong>${esc(oppChamp ? oppChamp.name : a.opp.championName)}</strong>
+          </div>` : ''}
+        </div>
+        <p class="skill-note">タイムラインAPI (1分ごとのスナップショット + 全イベント) による分析です。
+        バースト計算は簡易モデルによる<strong>推定</strong>で、スキルの命中などフレーム単位の操作は対象外です。</p>
+      </section>
+
+      <section class="panel">
+        <h3>キルチャンス分析 <span class="badge badge-auto">推定</span></h3>
+        ${killWindowsHtml(a)}
+      </section>
+
+      <section class="panel">
+        <h3>アイテム効果分析</h3>
+        ${itemEffectsHtml(a)}
+      </section>
+
+      <section class="panel">
+        <h3>マクロ分析</h3>
+        <div class="build-grid">
+          <div class="build-col">
+            <h4>マップ上の動き</h4>
+            ${reviewMapSvg(a)}
+          </div>
+          <div class="build-col">
+            <h4>対面とのゴールド差</h4>
+            ${goldChartSvg(a)}
+            <div class="team-stats review-stats">
+              <span class="team-stat">オブジェクト関与 <strong>${a.objectives.near}/${a.objectives.total}</strong></span>
+              <span class="team-stat">ワード設置 <strong>${a.wards.placed}</strong></span>
+              <span class="team-stat">ワード破壊 <strong>${a.wards.killed}</strong></span>
+              <span class="team-stat">キル関与 <strong>${kp}%</strong></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>デスレビュー <span class="badge badge-auto">自動診断</span></h3>
+        ${deathReviewHtml(a)}
       </section>`;
   }
 

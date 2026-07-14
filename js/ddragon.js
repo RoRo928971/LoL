@@ -64,10 +64,11 @@ const DDragon = (() => {
   const spellIcon = (spell) => `${BASE}/cdn/${state.version}/img/spell/${spell.image.full}`;
   const passiveIcon = (passive) => `${BASE}/cdn/${state.version}/img/passive/${passive.image.full}`;
   const runeIcon = (iconPath) => `${BASE}/cdn/img/${iconPath}`;
+  const mapImage = () => `${BASE}/cdn/${state.version}/img/map/map11.png`;
 
   return {
     state, load, loadChampionDetail,
     championIcon, championSplash, championLoading,
-    itemIcon, spellIcon, passiveIcon, runeIcon,
+    itemIcon, spellIcon, passiveIcon, runeIcon, mapImage,
   };
 })();
