@@ -255,6 +255,19 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px; }
 .skill-arrow { color: var(--gold); font-size: 20px; }
 .skill-note { font-size: 12px; color: var(--text-dim); }
 
+/* ---------- カウンター一覧 ---------- */
+.counter-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 6px; color: var(--text);
+}
+.counter-row:hover { border-color: var(--gold); background: var(--bg-card-hover); }
+.counter-row img { width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0; }
+.counter-name { min-width: 92px; font-size: 13px; font-weight: 600; color: var(--gold-bright); }
+.counter-bar { width: 52px; flex-shrink: 0; margin-left: 0; }
+.fill-threat { background: var(--ad); }
+.counter-reason { flex: 1; font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+
 /* ---------- コンボと使い方 ---------- */
 .combo {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;

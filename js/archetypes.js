@@ -251,7 +251,8 @@ const Archetypes = (() => {
     const magicLeaning = info.magic > info.attack;
 
     if (has('Marksman')) return 'marksman';
-    if (has('Support')) {
+    // 第1タグが Mage のチャンピオン (ラックス・モルガナ等) はメイジとして扱う
+    if (has('Support') && tags[0] !== 'Mage') {
       // タンク/ファイター寄りのサポートはエンゲージ型とみなす
       if (has('Tank') || has('Fighter') || info.defense >= 7) return 'support_tank';
       return 'support_enchanter';

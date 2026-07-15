@@ -8,7 +8,7 @@
     ['Fighter', 'ファイター'], ['Tank', 'タンク'], ['Mage', 'メイジ'],
     ['Assassin', 'アサシン'], ['Marksman', 'マークスマン'], ['Support', 'サポート'],
   ];
-  const ui = { champSearch: '', champRole: '', itemSearch: '', opponentId: '' };
+  const ui = { champSearch: '', champRole: '', itemSearch: '', opponentId: '', counterRole: '' };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -168,6 +168,7 @@
           </div>
         </section>
 
+        ${countersPanelHtml(Counters.analyze(allChamps, summary))}
         ${combosHtml(championId, detail, archetypeKey)}
         ${skillOrderHtml(championId, detail)}
         ${detail ? spellsHtml(detail) : ''}`;
@@ -179,6 +180,7 @@
       document.getElementById('opponent-select').addEventListener('change', (e) => {
         ui.opponentId = e.target.value; draw();
       });
+      bindCounterChips();
       bindItemTooltips();
     };
     draw();
@@ -258,6 +260,66 @@
         </div>
         <p class="build-total">コアビルド合計: <strong>${gold(Recommend.totalGold(set))}</strong></p>
       </div>`;
+  }
+
+  // ---------------- カウンター一覧 ----------------
+
+  let lastCounterData = null; // ロールフィルタの再描画用
+
+  function counterRowsHtml(list, role, threat) {
+    const filtered = role ? list.filter((x) => (x.champ.tags || []).includes(role)) : list;
+    if (!filtered.length) return '<p class="empty">該当するチャンピオンがいません。</p>';
+    return filtered.slice(0, 8).map((x) => `
+      <a class="counter-row" href="#/champion/${encodeURIComponent(x.champ.id)}">
+        <img loading="lazy" src="${DDragon.championIcon(x.champ)}" alt="">
+        <span class="counter-name">${esc(x.champ.name)}</span>
+        <span class="winbar counter-bar">
+          <span class="winbar-fill ${threat ? 'fill-threat' : ''}" style="width:${Math.min(100, Math.round(x.score / 3 * 100))}%"></span>
+        </span>
+        <span class="counter-reason">${esc(x.reason)}</span>
+      </a>`).join('');
+  }
+
+  function countersPanelHtml(counterData) {
+    lastCounterData = counterData;
+    return `
+      <section class="panel">
+        <div class="panel-head">
+          <h3>カウンター一覧 <span class="badge badge-auto">自動推定</span></h3>
+          <div class="chips" id="counter-role-chips">
+            <button class="chip ${ui.counterRole ? '' : 'on'}" data-role="">すべて</button>
+            ${ROLE_TAGS.map(([tag, label]) =>
+              `<button class="chip ${ui.counterRole === tag ? 'on' : ''}" data-role="${tag}">${label}</button>`).join('')}
+          </div>
+        </div>
+        <div class="build-grid">
+          <div class="build-col">
+            <h4>警戒すべき相手 <small class="tip-source">(このチャンピオンのカウンター)</small></h4>
+            <div id="counter-threats">${counterRowsHtml(counterData.threats, ui.counterRole, true)}</div>
+          </div>
+          <div class="build-col">
+            <h4>有利がつきやすい相手</h4>
+            <div id="counter-favorable">${counterRowsHtml(counterData.favorable, ui.counterRole, false)}</div>
+          </div>
+        </div>
+        <p class="skill-note">タグ・評価値・回復/バースト特性に基づく相性の自動推定です。
+        実際の有利不利はスキル構成やプレイヤーの練度で変わります。名前をクリックすると相手の詳細へ移動します。</p>
+      </section>`;
+  }
+
+  function bindCounterChips() {
+    const chips = document.getElementById('counter-role-chips');
+    if (!chips) return;
+    chips.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chip');
+      if (!btn) return;
+      ui.counterRole = btn.dataset.role;
+      chips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('on', b === btn));
+      document.getElementById('counter-threats').innerHTML =
+        counterRowsHtml(lastCounterData.threats, ui.counterRole, true);
+      document.getElementById('counter-favorable').innerHTML =
+        counterRowsHtml(lastCounterData.favorable, ui.counterRole, false);
+    });
   }
 
   // コンボトークン (Q/W/E/R/AA/FL) を表示チップに変換する
