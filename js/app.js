@@ -429,9 +429,30 @@
 
   // ---------------- ルーン図鑑 ----------------
 
+  // 図鑑用: クリックで完全な説明 (longDesc) を開閉できるルーン表示
+  function runeCatalogItemHtml(rune, big = false) {
+    const short = stripTags(rune.shortDesc);
+    // 改行を保ったままタグを除去する
+    const long = String(rune.longDesc || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .trim();
+    return `
+      <div class="rune ${big ? 'rune-big' : ''} rune-expandable" role="button" tabindex="0"
+           aria-expanded="false" title="クリックで詳細を表示">
+        <img src="${DDragon.runeIcon(rune.icon)}" alt="">
+        <div class="rune-text">
+          <span class="rune-name">${esc(rune.name)} <span class="rune-toggle">▾</span></span>
+          <span class="rune-desc rune-desc-open">${esc(short)}</span>
+          ${long && long !== short ? `<span class="rune-full">${esc(long)}</span>` : ''}
+        </div>
+      </div>`;
+  }
+
   function renderRunes() {
     main.innerHTML = `
-      <section class="rune-catalog">
+      <section class="rune-catalog" id="rune-catalog">
+        <p class="skill-note">ルーンをクリックすると完全な説明を表示します。</p>
         ${DDragon.state.runeTrees.map((tree) => `
           <div class="rune-tree-card">
             <div class="tree-head big">
@@ -440,10 +461,25 @@
             </div>
             ${tree.slots.map((slot, i) => `
               <div class="rune-slot-row ${i === 0 ? 'keystone-row' : ''}">
-                ${slot.runes.map((r) => runeHtml(r, i === 0)).join('')}
+                ${slot.runes.map((r) => runeCatalogItemHtml(r, i === 0)).join('')}
               </div>`).join('')}
           </div>`).join('')}
       </section>`;
+
+    const toggle = (el) => {
+      el.classList.toggle('open');
+      el.setAttribute('aria-expanded', el.classList.contains('open'));
+    };
+    const catalog = document.getElementById('rune-catalog');
+    catalog.addEventListener('click', (e) => {
+      const rune = e.target.closest('.rune-expandable');
+      if (rune) toggle(rune);
+    });
+    catalog.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const rune = e.target.closest('.rune-expandable');
+      if (rune) { e.preventDefault(); toggle(rune); }
+    });
   }
 
   // ---------------- 試合プラン (チーム構成分析) ----------------

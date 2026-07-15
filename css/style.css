@@ -525,6 +525,26 @@ main { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 20px; }
 
 /* ---------- ルーン図鑑 ---------- */
 .rune-catalog { display: flex; flex-direction: column; gap: 20px; }
+.rune-expandable {
+  cursor: pointer; border-radius: 8px; align-items: flex-start; outline: none;
+}
+.rune-expandable:hover, .rune-expandable:focus-visible { background: rgba(255,255,255,.05); }
+.rune-expandable img { margin-top: 2px; }
+/* 図鑑では短い説明も省略せずすべて表示する */
+.rune-desc-open {
+  display: block; -webkit-line-clamp: unset; -webkit-box-orient: unset; overflow: visible;
+}
+.rune-toggle {
+  display: inline-block; color: var(--text-dim); font-size: 10px;
+  transition: transform .15s;
+}
+.rune-expandable.open .rune-toggle { transform: rotate(180deg); }
+.rune-full {
+  display: none; font-size: 12px; color: var(--text); line-height: 1.6;
+  white-space: pre-line; margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.rune-expandable.open .rune-full { display: block; }
 .rune-tree-card {
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 12px; padding: 20px;
